@@ -11,7 +11,6 @@ import {
   X,
   RefreshCw,
   Clock,
-  Waves
 } from "lucide-react";
 import { AppLanguage, AudioPreview } from "../types";
 
@@ -518,7 +517,7 @@ export default function AudioTools({ onTranscribe, isProcessing, language }: Aud
                 onClick={handleSubmit}
                 disabled={!selectedFile}
                 className={`w-full py-4 text-sm font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all ${
-                  selectedFile 
+                  selectedFile
                     ? "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 cursor-pointer shadow-amber-950/20 border border-amber-400/20 active:scale-[0.98]" 
                     : "bg-slate-800 text-slate-500 cursor-not-allowed border border-transparent"
                 }`}
