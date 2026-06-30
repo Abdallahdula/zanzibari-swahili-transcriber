@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
+dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 const app = express();
@@ -194,7 +195,8 @@ Follow these strict rules:
 1. DIALECT & SLANG: Capture the exact dialect features of Zanzibar (e.g., using 'potezea', 'mambo yange', 'kuzengeana', 'mshkaji', Arabic phrases, greetings, 'shehe'). Do NOT sanitize or translate regional slang into standard Swahili in the transcript itself. Write verbatim what they say, and document the slang in the dialectGloss array!
 2. SPEAKER DIARIZATION: Segment who is speaking. If names are mentioned (Salim, Halima, Sumayya, Fatma, etc.), use their names as speaker labels instead of generic labels.
 3. CONCISE DENSITY FOR LONG RECORDINGS: If files are excessively long (such as a full 39 min meeting), synthesize repetitive circular loops, but preserve all relevant dialogue, core decisions, arguments, and Zanzibari slang terms with precise turn-by-turn timestamps in format MM:SS.
-4. SUMMARY: Provide high-quality meeting summaries, lists of decisions, and actionable items.`;
+4. TRANSCRIPT LANGUAGE: Keep the transcript itself in Swahili/Kiunguja exactly as spoken. Do not translate the spoken transcript into English, even if the application interface is English.
+5. SUMMARY: Provide high-quality meeting summaries, lists of decisions, and actionable items.`;
 
     const promptText = `Please transcribe the provided Swahili meeting audio file.
 File Name: ${fileName || "recording.mp3"}

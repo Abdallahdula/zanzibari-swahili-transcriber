@@ -4,6 +4,7 @@ import {
   Search, 
   Copy, 
   Download, 
+  ChevronDown,
   Edit3, 
   Save, 
   X, 
@@ -14,17 +15,23 @@ import {
   CheckCircle,
   HelpCircle
 } from "lucide-react";
-import { DialogueTurn, DialectGlossItem } from "../types";
+import { AudioPreview, DialogueTurn, DialectGlossItem } from "../types";
+
+type ExportFormat = "docx" | "txt" | "pdf" | "md";
 
 interface InteractiveTranscriptProps {
   transcript: DialogueTurn[];
   glossary: DialectGlossItem[];
+  audioPreview?: AudioPreview;
+  sessionTitle: string;
   onSaveTurn: (id: string, updatedSpeaker: string, updatedText: string) => void;
 }
 
 export default function InteractiveTranscript({
   transcript,
   glossary,
+  audioPreview,
+  sessionTitle,
   onSaveTurn
 }: InteractiveTranscriptProps) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -33,6 +40,7 @@ export default function InteractiveTranscript({
   const [editText, setEditText] = useState("");
   const [showCopyNotification, setShowCopyNotification] = useState(false);
   const [activeSlangTooltip, setActiveSlangTooltip] = useState<string | null>(null);
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
 
   // Filter dialogue turns based on search keyword
   const filteredTranscript = transcript.filter((turn) => {
@@ -85,17 +93,188 @@ export default function InteractiveTranscript({
     setTimeout(() => setShowCopyNotification(false), 2500);
   };
 
-  const handleDownloadTxt = () => {
-    const textBlob = transcript
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const transcriptAsPlainText = () =>
+    transcript
       .map((turn) => `[${turn.timestamp}] ${turn.speaker}: ${turn.text}`)
       .join("\n");
-    const blob = new Blob([textBlob], { type: "text/plain;charset=utf-8" });
+
+  const transcriptAsMarkdown = () =>
+    [`# ${sessionTitle}`, "", ...transcript.map((turn) => `- **[${turn.timestamp}] ${turn.speaker}:** ${turn.text}`)].join("\n");
+
+  const sanitizeFileName = (name: string) => {
+    const cleaned = name
+      .trim()
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .replace(/\s+/g, "_")
+      .slice(0, 90);
+    return cleaned || "ranskripti_kikao_zanzibar";
+  };
+
+  const downloadBlob = (blob: Blob, extension: ExportFormat) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "ranskripti_kikao_zanzibar.txt";
+    link.download = `${sanitizeFileName(sessionTitle)}.${extension}`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const escapeXml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+
+  const crcTable = (() => {
+    const table: number[] = [];
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let j = 0; j < 8; j++) {
+        c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      }
+      table[i] = c >>> 0;
+    }
+    return table;
+  })();
+
+  const crc32 = (data: Uint8Array) => {
+    let crc = 0xffffffff;
+    for (const byte of data) {
+      crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+
+  const u16 = (value: number) => [value & 0xff, (value >>> 8) & 0xff];
+  const u32 = (value: number) => [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff];
+
+  const createZip = (files: Array<{ name: string; data: Uint8Array }>) => {
+    const encoder = new TextEncoder();
+    const localParts: Uint8Array[] = [];
+    const centralParts: Uint8Array[] = [];
+    let offset = 0;
+
+    files.forEach((file) => {
+      const nameBytes = encoder.encode(file.name);
+      const checksum = crc32(file.data);
+      const localHeader = new Uint8Array([
+        ...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0),
+        ...u32(checksum), ...u32(file.data.length), ...u32(file.data.length),
+        ...u16(nameBytes.length), ...u16(0)
+      ]);
+      localParts.push(localHeader, nameBytes, file.data);
+
+      const centralHeader = new Uint8Array([
+        ...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0),
+        ...u32(checksum), ...u32(file.data.length), ...u32(file.data.length),
+        ...u16(nameBytes.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)
+      ]);
+      centralParts.push(centralHeader, nameBytes);
+      offset += localHeader.length + nameBytes.length + file.data.length;
+    });
+
+    const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+    const endRecord = new Uint8Array([
+      ...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length),
+      ...u32(centralSize), ...u32(offset), ...u16(0)
+    ]);
+
+    return new Blob([...localParts, ...centralParts, endRecord], { type: "application/zip" });
+  };
+
+  const createDocxBlob = () => {
+    const encoder = new TextEncoder();
+    const paragraphs = [
+      `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>${escapeXml(sessionTitle)}</w:t></w:r></w:p>`,
+      ...transcript.map((turn) =>
+        `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>${escapeXml(`[${turn.timestamp}] ${turn.speaker}: `)}</w:t></w:r><w:r><w:t>${escapeXml(turn.text)}</w:t></w:r></w:p>`
+      )
+    ].join("");
+    const files = [
+      {
+        name: "[Content_Types].xml",
+        data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`)
+      },
+      {
+        name: "_rels/.rels",
+        data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`)
+      },
+      {
+        name: "word/document.xml",
+        data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`)
+      }
+    ];
+    return createZip(files);
+  };
+
+  const escapePdfText = (value: string) =>
+    value
+      .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "")
+      .replace(/\\/g, "\\\\")
+      .replace(/\(/g, "\\(")
+      .replace(/\)/g, "\\)");
+
+  const createPdfBlob = () => {
+    const lines = [sessionTitle, "", ...transcriptAsPlainText().split("\n")];
+    const wrappedLines = lines.flatMap((line) => {
+      const chunks: string[] = [];
+      for (let i = 0; i < line.length || i === 0; i += 88) {
+        chunks.push(line.slice(i, i + 88));
+      }
+      return chunks;
+    }).slice(0, 180);
+    const content = [
+      "BT",
+      "/F1 10 Tf",
+      "50 790 Td",
+      "14 TL",
+      ...wrappedLines.map((line, index) => `${index === 0 ? "" : "T*"}(${escapePdfText(line)}) Tj`),
+      "ET"
+    ].join("\n");
+    const objects = [
+      "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+      "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+      "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+      `5 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`
+    ];
+    let pdf = "%PDF-1.4\n";
+    const offsets = [0];
+    objects.forEach((object) => {
+      offsets.push(pdf.length);
+      pdf += object;
+    });
+    const xrefOffset = pdf.length;
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    offsets.slice(1).forEach((offset) => {
+      pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+    });
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+    return new Blob([pdf], { type: "application/pdf" });
+  };
+
+  const handleDownloadTranscript = (format: ExportFormat) => {
+    setIsDownloadMenuOpen(false);
+    switch (format) {
+      case "txt":
+        downloadBlob(new Blob([transcriptAsPlainText()], { type: "text/plain;charset=utf-8" }), format);
+        break;
+      case "pdf":
+        downloadBlob(createPdfBlob(), format);
+        break;
+      case "md":
+        downloadBlob(new Blob([transcriptAsMarkdown()], { type: "text/markdown;charset=utf-8" }), format);
+        break;
+      default:
+        downloadBlob(createDocxBlob(), format);
+    }
   };
 
   // Check if a piece of text contains any of the known Zanzibari slang terms,
@@ -135,7 +314,7 @@ export default function InteractiveTranscript({
 
             {/* Quick-gloss floating translation popover tooltip */}
             {activeSlangTooltip === match.word && (
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl shadow-black z-20 text-xs animate-in fade-in slide-in-from-bottom-2">
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-3 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl shadow-black z-20 text-xs animate-in fade-in slide-in-from-top-2">
                 <div className="flex items-center justify-between mb-1.5 border-b border-slate-900 pb-1.5">
                   <span className="font-bold text-amber-400">{match.word}</span>
                   <button 
@@ -164,6 +343,29 @@ export default function InteractiveTranscript({
 
   return (
     <div id="interactive-transcript" className="space-y-5 font-sans">
+      {audioPreview && (
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-amber-500" />
+                <span>Sauti ya Asili (Original Audio)</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 truncate max-w-full sm:max-w-xl">
+                {audioPreview.fileName} - {formatFileSize(audioPreview.size)}
+              </p>
+            </div>
+          </div>
+          <audio
+            controls
+            src={audioPreview.url}
+            className="w-full h-10"
+          >
+            Your browser does not support audio playback.
+          </audio>
+        </div>
+      )}
+
       {/* Search and control Actions panel */}
       <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col sm:flex-row gap-3 items-center justify-between">
         
@@ -181,7 +383,7 @@ export default function InteractiveTranscript({
         </div>
 
         {/* Action button panel */}
-        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
           <button
             id="btn-copy-transcript"
             onClick={handleCopyTranscript}
@@ -192,15 +394,41 @@ export default function InteractiveTranscript({
             <span>Nakili (Copy)</span>
           </button>
 
-          <button
-            id="btn-download-txt"
-            onClick={handleDownloadTxt}
-            className="py-2 px-3.5 rounded-lg text-xs font-bold gap-1.5 flex items-center bg-slate-850 hover:bg-slate-800 text-slate-300 transition-colors cursor-pointer border border-slate-800 active:scale-95"
-            title="Pakua faili la TXT"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Pakua TXT</span>
-          </button>
+          <div className="relative">
+            <button
+              id="btn-download-transcript"
+              onClick={() => setIsDownloadMenuOpen((current) => !current)}
+              className="py-2 px-3.5 rounded-lg text-xs font-bold gap-1.5 flex items-center bg-slate-850 hover:bg-slate-800 text-slate-300 transition-colors cursor-pointer border border-slate-800 active:scale-95"
+              title="Pakua faili"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Pakua DOCX</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+
+            {isDownloadMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-40 rounded-xl border border-slate-800 bg-slate-950 shadow-2xl shadow-black/40 p-1 z-40">
+                {([
+                  ["docx", "DOCX"],
+                  ["txt", "TXT"],
+                  ["pdf", "PDF"],
+                  ["md", "Markdown"]
+                ] as Array<[ExportFormat, string]>).map(([format, label]) => (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => handleDownloadTranscript(format)}
+                    className="w-full px-3 py-2 text-left text-xs font-bold rounded-lg text-slate-300 hover:bg-slate-800 hover:text-slate-100 cursor-pointer flex items-center justify-between"
+                  >
+                    <span>{label}</span>
+                    {format === "docx" && (
+                      <span className="text-[9px] uppercase tracking-wider text-amber-500">default</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
       </div>

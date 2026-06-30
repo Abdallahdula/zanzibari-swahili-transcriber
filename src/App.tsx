@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   FileText, 
   HelpCircle, 
@@ -15,7 +15,8 @@ import {
   X,
   Radio,
   BookOpen,
-  MessageSquare
+  MessageSquare,
+  Languages
 } from "lucide-react";
 import WorkspaceSidebar from "./components/WorkspaceSidebar";
 import AudioTools from "./components/AudioTools";
@@ -23,7 +24,80 @@ import InteractiveTranscript from "./components/InteractiveTranscript";
 import MeetingMinutes from "./components/MeetingMinutes";
 import DialectGlossary from "./components/DialectGlossary";
 import { SAMPLE_MEETINGS } from "./data/samples";
-import { MeetingSession, DialogueTurn, ActionItem } from "./types";
+import { MeetingSession, DialogueTurn, ActionItem, AppLanguage, AppTheme, AudioPreview } from "./types";
+
+const UI_TEXT = {
+  sw: {
+    chooseTitle: "Chagua lugha ya programu",
+    chooseBody: "Uandishi wa sauti utaendelea kubaki kwa Kiswahili. Chaguo hili linabadilisha maandishi ya menyu na vitufe tu.",
+    swahili: "Kiswahili",
+    english: "English",
+    selectedMeeting: "Kikao Kilichochaguliwa",
+    officialSample: "Mfano Rasmi (Sample)",
+    transcriptTab: "Mazungumzo",
+    minutesTab: "Nyaraka na Kazi",
+    glossaryTab: "Kamusi ya Misemo",
+    welcomeTitle: "Karibu Kwenye Mkalimani wa Zanzibar!",
+    welcomeBody: "Mfumo wa kisasa wa kutafrisi na kudurusu sauti za mikutano asilia kwa lugha ya Kiswahili visiwani (Kiunguja).",
+    loadSample: "Fungua Data ya Mfano",
+    newMeeting: "Kikao Kipya",
+    micFeature: "Kipaza Sauti na Mifumo",
+    micFeatureBody: "Rekodi moja kwa moja au pakia faili la sauti hadi 100MB.",
+    glossaryFeature: "Misemo na Maneno ya Kamusi",
+    glossaryFeatureBody: "Mfumo hutambua misemo ya Kiunguja na kuiweka kwenye kamusi maalum.",
+    modalBadge: "Kikao Kipya Zanzibar",
+    modalTitle: "Usajili na Uandishi wa Sauti Mpya",
+    modalBody: "Rekodi mazungumzo moja kwa moja hapa, au pakia faili lililorekodiwa huko nyuma.",
+    close: "Funga",
+    errorTitle: "Hitilafu Imepatikana!",
+    apiHelpTitle: "Hatua za kurekebisha ufunguo:",
+    apiHelp1: "Tengeneza Gemini API key Google AI Studio.",
+    apiHelp2: "Weka key yako kwenye faili .env.local kama GEMINI_API_KEY.",
+    apiHelp3: "Anzisha upya app kisha jaribu tena.",
+    apiHelpTip: "Kidokezo: Unaweza kufungua Kikao cha Mfano kabla hujaweka ufunguo.",
+    readSample: "Nisomee Data ya Mfano",
+    cancel: "Ghairi",
+    tooLarge: "Faili la sauti ni kubwa sana kupokelewa na seva (max 100MB). Tafadhali libane/compress kwanza kisha upakie tena.",
+    genericFail: "Mchakato wa kutafsiri umefeli. Tafadhali jaribu tena.",
+    apiFail: "Imefeli kuchakata audio. Hakikisha GEMINI_API_KEY ipo kwenye .env.local au jaribu tena.",
+    defaultContext: "Hakuna muktadha ulioongezwa"
+  },
+  en: {
+    chooseTitle: "Choose app language",
+    chooseBody: "The transcription will remain in Swahili. This only changes the app menus, labels, and helper text.",
+    swahili: "Kiswahili",
+    english: "English",
+    selectedMeeting: "Selected Meeting",
+    officialSample: "Official Sample",
+    transcriptTab: "Transcript",
+    minutesTab: "Minutes & Tasks",
+    glossaryTab: "Dialect Glossary",
+    welcomeTitle: "Welcome to Mkalimani Zanzibar",
+    welcomeBody: "A meeting audio transcriber for Zanzibari Swahili (Kiunguja), with summaries, action items, and dialect notes.",
+    loadSample: "Open Sample Data",
+    newMeeting: "New Meeting",
+    micFeature: "Microphone and Uploads",
+    micFeatureBody: "Record directly or upload an audio file up to 100MB.",
+    glossaryFeature: "Dialect Terms",
+    glossaryFeatureBody: "The app detects Kiunguja expressions and keeps them in a dedicated glossary.",
+    modalBadge: "New Zanzibar Meeting",
+    modalTitle: "Register and Transcribe New Audio",
+    modalBody: "Record a conversation here, or upload a previously recorded audio file.",
+    close: "Close",
+    errorTitle: "Something Went Wrong",
+    apiHelpTitle: "How to fix the key:",
+    apiHelp1: "Create a Gemini API key in Google AI Studio.",
+    apiHelp2: "Put the key in .env.local as GEMINI_API_KEY.",
+    apiHelp3: "Restart the app, then try again.",
+    apiHelpTip: "Tip: You can open the sample meeting before adding the key.",
+    readSample: "Open Sample Data",
+    cancel: "Cancel",
+    tooLarge: "The audio file is too large for the server (max 100MB). Please compress it first, then upload again.",
+    genericFail: "Transcription failed. Please try again.",
+    apiFail: "Audio processing failed. Make sure GEMINI_API_KEY exists in .env.local, then try again.",
+    defaultContext: "No context added"
+  }
+} as const;
 
 export default function App() {
   // Session list loaded from localstorage or preloaded sample
@@ -48,6 +122,29 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [newModalOpen, setNewModalOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [audioPreviews, setAudioPreviews] = useState<Record<string, AudioPreview>>({});
+  const audioPreviewsRef = useRef<Record<string, AudioPreview>>({});
+  const [appLanguage, setAppLanguage] = useState<AppLanguage | null>(() => {
+    const saved = localStorage.getItem("zanzibar_app_language");
+    return saved === "sw" || saved === "en" ? saved : null;
+  });
+  const [appTheme, setAppTheme] = useState<AppTheme>(() => {
+    const saved = localStorage.getItem("zanzibar_app_theme");
+    return saved === "light" || saved === "dark" ? saved : "dark";
+  });
+
+  const language = appLanguage || "sw";
+  const text = UI_TEXT[language];
+
+  const handleSetLanguage = (nextLanguage: AppLanguage) => {
+    setAppLanguage(nextLanguage);
+    localStorage.setItem("zanzibar_app_language", nextLanguage);
+  };
+
+  const handleSetTheme = (nextTheme: AppTheme) => {
+    setAppTheme(nextTheme);
+    localStorage.setItem("zanzibar_app_theme", nextTheme);
+  };
 
   // Sync state to localStorage on modification
   useEffect(() => {
@@ -58,6 +155,16 @@ export default function App() {
       localStorage.setItem("zanzibar_active_session_id", firstId);
     }
   }, [sessions]);
+
+  useEffect(() => {
+    audioPreviewsRef.current = audioPreviews;
+  }, [audioPreviews]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(audioPreviewsRef.current as Record<string, AudioPreview>).forEach((preview) => URL.revokeObjectURL(preview.url));
+    };
+  }, []);
 
   // Set active session sync helper
   const handleSelectSession = (id: string) => {
@@ -81,6 +188,14 @@ export default function App() {
   const handleDeleteSession = (id: string) => {
     const filtered = sessions.filter((s) => s.id !== id);
     setSessions(filtered);
+    setAudioPreviews((current) => {
+      const preview = current[id];
+      if (preview) {
+        URL.revokeObjectURL(preview.url);
+      }
+      const { [id]: _removed, ...remaining } = current;
+      return remaining;
+    });
     
     if (activeSessionId === id) {
       const nextActiveId = filtered.length > 0 ? filtered[0].id : null;
@@ -110,7 +225,9 @@ export default function App() {
     audioBase64: string,
     fileName: string,
     mimeType: string,
-    context: string
+    context: string,
+    preferredTitle?: string,
+    audioPreview?: AudioPreview
   ) => {
     setIsProcessing(true);
     setErrorMessage(null);
@@ -136,22 +253,23 @@ export default function App() {
       } else {
         const textError = await response.text();
         if (response.status === 413 || textError.toLowerCase().includes("too large")) {
-          throw new Error("Faili la sauti ni kubwa sana kupokelewa na seva (max 100MB). Tafadhali libane/compress kwanza kisha upakie tena.");
+          throw new Error(text.tooLarge);
         }
         throw new Error(`Mchakato wa kutafsiri umefeli (Status ${response.status}). Tafadhali hakikisha kuwa Secrets panel ina ufunguo thabiti wa GEMINI_API_KEY au jaribu kutumia faili fupi zaidi.`);
       }
 
       if (!response.ok) {
-        throw new Error(data.error || "Mchakato wa kutafsiri umefeli. Tafadhali jaribu tena.");
+        throw new Error(data.error || text.genericFail);
       }
 
       // Structure newly responded session
+      const newSessionId = `session-${Date.now()}`;
       const newSession: MeetingSession = {
-        id: `session-${Date.now()}`,
-        title: data.title || `Kikao cha ${new Date().toLocaleDateString()}`,
+        id: newSessionId,
+        title: preferredTitle || data.title || `Kikao cha ${new Date().toLocaleDateString()}`,
         date: new Date().toISOString().split("T")[0],
         duration: data.duration || "N/A",
-        context: context || "Hakuna muktadha ulioenewa",
+        context: context || text.defaultContext,
         summary: data.summary,
         // map unique dialogue turn IDs for inline edits
         transcript: data.transcript.map((turn: any, index: number) => ({
@@ -164,14 +282,23 @@ export default function App() {
       };
 
       setSessions([newSession, ...sessions]);
+      if (audioPreview) {
+        setAudioPreviews((current) => ({
+          ...current,
+          [newSessionId]: audioPreview
+        }));
+      }
       handleSelectSession(newSession.id);
       setNewModalOpen(false);
 
     } catch (err: any) {
       console.error("Transcribing API failed:", err);
+      if (audioPreview) {
+        URL.revokeObjectURL(audioPreview.url);
+      }
       setErrorMessage(
         err.message || 
-        "Imefeli kuchakata audio. Inawezekana ufunguo wa GEMINI_API_KEY haujaunganishwa kikamilifu kwenye Secrets panel au kuna shida ya mtandao."
+        text.apiFail
       );
     } finally {
       setIsProcessing(false);
@@ -221,8 +348,50 @@ export default function App() {
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
+  if (!appLanguage) {
+    return (
+      <div className={`theme-${appTheme} min-h-screen bg-slate-950 text-slate-100 font-sans antialiased flex items-center justify-center p-4`}>
+        <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-400">
+              <Languages className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl font-black text-slate-100 font-display">
+                Choose app language
+              </h1>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Chagua lugha ya programu. The transcription will remain in Swahili; this only changes the interface.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8">
+            <button
+              type="button"
+              onClick={() => handleSetLanguage("sw")}
+              className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-left hover:bg-amber-500/15 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <span className="block text-base font-bold text-amber-300">Kiswahili</span>
+              <span className="block text-xs text-slate-400 mt-1">Menyu na maelekezo kwa Kiswahili.</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSetLanguage("en")}
+              className="p-4 rounded-xl border border-slate-700 bg-slate-950/50 text-left hover:bg-slate-800/70 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <span className="block text-base font-bold text-slate-100">English</span>
+              <span className="block text-xs text-slate-400 mt-1">Menus and guidance in English.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div id="mkalimani-app" className="flex flex-col lg:flex-row min-h-screen bg-slate-950 text-slate-100 font-sans antialiased overflow-x-hidden">
+    <div id="mkalimani-app" className={`theme-${appTheme} flex flex-col lg:flex-row min-h-screen lg:h-screen bg-slate-950 text-slate-100 font-sans antialiased overflow-x-hidden lg:overflow-hidden`}>
       
       {/* Side orchestration manager panel */}
       <WorkspaceSidebar
@@ -232,25 +401,29 @@ export default function App() {
         onDeleteSession={handleDeleteSession}
         onLoadSample={handleLoadSample}
         onOpenNewModal={handleOpenNewModal}
+        language={language}
+        onLanguageChange={handleSetLanguage}
+        theme={appTheme}
+        onThemeChange={handleSetTheme}
       />
 
       {/* Main interactive area */}
-      <main className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
+      <main className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full lg:h-screen lg:overflow-y-auto">
         
         {/* Active workspace view */}
         {activeSession ? (
-          <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+          <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
             
             {/* Top Workspace Bar */}
             <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-slate-900 pb-5">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] uppercase font-bold tracking-widest text-amber-500 bg-amber-500/10 px-2.5 py-0.5 rounded border border-amber-500/20 font-mono">
-                    Kikao Kilichochaguliwa
+                    {text.selectedMeeting}
                   </span>
                   {activeSession.id === "zanzibar-tourism-coop" && (
                     <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded border border-indigo-500/20 font-mono">
-                      Mfano Rasmi (Sample)
+                      {text.officialSample}
                     </span>
                   )}
                 </div>
@@ -277,7 +450,7 @@ export default function App() {
                 }`}
               >
                 <FileText className="w-4 h-4 shrink-0" />
-                <span>Mazungumzo (Transcript)</span>
+                <span>{text.transcriptTab}</span>
               </button>
 
               <button
@@ -290,7 +463,7 @@ export default function App() {
                 }`}
               >
                 <ListTodo className="w-4 h-4 shrink-0" />
-                <span>Nyaraka na Kazi (Minutes & Action Items)</span>
+                <span>{text.minutesTab}</span>
               </button>
 
               <button
@@ -303,16 +476,18 @@ export default function App() {
                 }`}
               >
                 <Compass className="w-4 h-4 shrink-0" />
-                <span>Kamusi ya Misemo (Zanzibar Slang Gloss)</span>
+                <span>{text.glossaryTab}</span>
               </button>
             </div>
 
             {/* Selected segment contents */}
-            <div className="bg-slate-950 rounded-2xl min-h-[400px]">
+            <div className="bg-slate-950 rounded-2xl min-h-[360px]">
               {activeTab === "transcript" && (
                 <InteractiveTranscript
                   transcript={activeSession.transcript}
                   glossary={activeSession.dialectGloss}
+                  audioPreview={audioPreviews[activeSession.id]}
+                  sessionTitle={activeSession.title}
                   onSaveTurn={handleSaveTurn}
                 />
               )}
@@ -332,7 +507,7 @@ export default function App() {
           </div>
         ) : (
           /* Empty onboarding state */
-          <div className="bg-gradient-to-br from-slate-900 to-indigo-950/20 border border-slate-850 p-10 rounded-3xl flex flex-col items-center justify-center text-center self-center max-w-2xl mx-auto my-12 space-y-6 relative overflow-hidden">
+          <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-2xl flex flex-col items-center justify-center text-center self-center max-w-2xl mx-auto my-6 lg:my-auto space-y-5 relative overflow-hidden">
             <div className="absolute right-0 top-0 w-36 h-36 bg-amber-500/5 rounded-full blur-3xl -z-10" />
             
             <div className="p-4 bg-amber-500/10 rounded-full border border-amber-500/20 text-amber-400">
@@ -340,11 +515,11 @@ export default function App() {
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-2xl font-black tracking-tight text-slate-100 font-display">
-                Karibu Kwenye Mkalimani wa Zanzibar!
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-100 font-display">
+                {text.welcomeTitle}
               </h2>
               <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed font-sans">
-                Mfumo wa kisasa wa kutafrisi na kudurusu sauti za mikutano asilia kwa lugha ya Kiswahili visiwani (Kiunguja). Tunatafsiri kwa usahihi wa hali ya juu ukitumia uwezo wa <strong>Gemini 3.5</strong>.
+                {text.welcomeBody}
               </p>
             </div>
 
@@ -356,7 +531,7 @@ export default function App() {
                 className="flex-1 py-3 px-4 rounded-xl text-xs font-bold gap-2 flex items-center justify-center bg-slate-850 hover:bg-slate-800 text-slate-200 transition-colors border border-slate-800 cursor-pointer active:scale-95"
               >
                 <FolderOpen className="w-4 h-4 text-amber-500" />
-                <span>Fungua Data ya Mfano</span>
+                <span>{text.loadSample}</span>
               </button>
 
               <button
@@ -365,22 +540,22 @@ export default function App() {
                 className="flex-1 py-3 px-4 rounded-xl text-xs font-bold gap-2 flex items-center justify-center bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 transition-colors cursor-pointer border border-amber-400/20 active:scale-95 shadow-lg shadow-amber-950/20"
               >
                 <Plus className="w-4 h-4 font-black" />
-                <span>Kikao Kipya</span>
+                <span>{text.newMeeting}</span>
               </button>
             </div>
 
             {/* Quick specifications / instructions list */}
             <div className="pt-6 border-t border-slate-850 w-full mt-4 text-left grid grid-cols-1 sm:grid-cols-2 gap-4 text-slate-400 font-sans">
               <div className="space-y-1">
-                <span className="font-bold text-slate-200 text-xs block">🎙️ Kipaza Sauti na Mifumo</span>
+                <span className="font-bold text-slate-200 text-xs block">{text.micFeature}</span>
                 <p className="text-[11px] leading-normal leading-slate-400 text-slate-400">
-                  Unaweza kurekodi moja kwa moja kwa kutumia kipaza sauti au kupakia faili ili kufanya uandishi wa urefu wa hadi dakika 39 au zaidi.
+                  {text.micFeatureBody}
                 </p>
               </div>
               <div className="space-y-1">
-                <span className="font-bold text-slate-200 text-xs block">🏝️ Misemo na Maneno ya Kamusi</span>
+                <span className="font-bold text-slate-200 text-xs block">{text.glossaryFeature}</span>
                 <p className="text-[11px] leading-normal leading-slate-400 text-slate-400">
-                  Mfumo unatambua moja kwa moja misemo ya kiunguja na kuileta kwenye dondoo za kamusi maalum ili isipotee wakati wa muhtasari.
+                  {text.glossaryFeatureBody}
                 </p>
               </div>
             </div>
@@ -395,7 +570,7 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all animate-in fade-in duration-200">
           <div 
             id="new-meeting-modal"
-            className="bg-slate-900 border border-slate-850 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
+            className="bg-slate-900 border border-slate-850 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col"
           >
             {/* Modal close button */}
             {!isProcessing && (
@@ -403,23 +578,23 @@ export default function App() {
                 id="btn-close-modal"
                 onClick={handleCloseNewModal}
                 className="absolute right-4 top-4 p-2 text-slate-400 hover:text-slate-200 rounded-full hover:bg-slate-800 transition-colors cursor-pointer"
-                title="Funga"
+                title={text.close}
               >
                 <X className="w-5 h-5" />
               </button>
             )}
 
             {/* Modal Heading banner */}
-            <div className="p-6 bg-gradient-to-br from-slate-950 to-slate-900 border-b border-slate-850">
+            <div className="p-5 sm:p-6 bg-slate-950 border-b border-slate-850 shrink-0">
               <span className="text-[9px] font-mono font-bold tracking-widest text-amber-500 uppercase bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/25">
-                Kikao Kipya Zanzibar
+                {text.modalBadge}
               </span>
               <h3 className="text-lg font-bold text-slate-100 font-display mt-2 flex items-center gap-2">
                 <Radio className="w-5 h-5 text-amber-500 animate-pulse" />
-                <span>Usajili na Uandishi wa Sauti Mpya</span>
+                <span>{text.modalTitle}</span>
               </h3>
               <p className="text-xs text-slate-400 mt-1 max-w-xl">
-                Rekodi mazungumzo moja kwa moja hapa, au pakia faili lililorekodiwa huko nyuma. Unaweza pia kufungua kielelezo cha kikao cha kisiwani kujaribu!
+                {text.modalBody}
               </p>
             </div>
 
@@ -428,23 +603,22 @@ export default function App() {
               <div className="m-6 p-4 bg-rose-950/30 border border-rose-500/30 rounded-xl flex gap-3 text-slate-300">
                 <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
                 <div className="space-y-1 text-xs sm:text-sm">
-                  <span className="font-bold text-rose-400">Hitilafu Imepatikana!</span>
+                  <span className="font-bold text-rose-400">{text.errorTitle}</span>
                   <p className="text-xs text-slate-400 leading-normal leading-slate-400 mt-1 font-sans">{errorMessage}</p>
                   
                   {/* Assistive instructions if they lack an API KEY */}
                   {errorMessage.includes("GEMINI_API_KEY") && (
                     <div className="mt-3 p-2.5 bg-slate-950/50 rounded-lg border border-slate-850 text-[11px] text-slate-400 font-sans space-y-1.5 lines leading-relaxed">
                       <p className="font-semibold text-slate-300">
-                        Hatua za kurekebisha ufunguo:
+                        {text.apiHelpTitle}
                       </p>
                       <ol className="list-decimal list-inside space-y-1 pl-1">
-                        <li>Fungua menu ya <strong>Settings</strong> juu upande wa kulia kulia wa screen.</li>
-                        <li>Chagua sub-menu ya <strong>Secrets</strong>.</li>
-                        <li>Ingiza ufunguo wako wa <strong>GEMINI_API_KEY</strong> uliyopewa toka Google AI Studio.</li>
-                        <li>Baada ya hapo fanya jaribio lingine la kutafsiri.</li>
+                        <li>{text.apiHelp1}</li>
+                        <li>{text.apiHelp2}</li>
+                        <li>{text.apiHelp3}</li>
                       </ol>
                       <p className="text-amber-500/80 font-medium">
-                        💡 Kidokezo: Unaweza kufungua Kikao cha Mfano (Load Sample) papo hapo kabla hujaweka ufunguo!
+                        {text.apiHelpTip}
                       </p>
                     </div>
                   )}
@@ -453,23 +627,24 @@ export default function App() {
             )}
 
             {/* Sub-components container */}
-            <div className="p-6">
+            <div className="p-4 sm:p-6 overflow-y-auto">
               <AudioTools
                 onTranscribe={handleTranscribeAudio}
                 isProcessing={isProcessing}
+                language={language}
               />
             </div>
             
             {/* Modal foot actions */}
             {!isProcessing && (
-              <div className="p-4 bg-slate-950/40 border-t border-slate-850 flex items-center justify-between px-6">
+              <div className="p-4 bg-slate-950/40 border-t border-slate-850 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between px-4 sm:px-6 shrink-0">
                 <button
                   id="btn-modal-sample"
                   onClick={handleLoadSample}
                   className="py-2 px-4 rounded-xl text-xs font-semibold text-amber-500 bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 cursor-pointer active:scale-95 transition-all flex items-center gap-1.5"
                 >
                   <FolderOpen className="w-3.5 h-3.5" />
-                  <span>Nisomee Data ya Mfano Papo Hapo!</span>
+                  <span>{text.readSample}</span>
                 </button>
 
                 <button
@@ -477,7 +652,7 @@ export default function App() {
                   onClick={handleCloseNewModal}
                   className="py-2 px-4 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800/65 cursor-pointer active:scale-95 transition-all"
                 >
-                  Ghairi (Close)
+                  {text.cancel}
                 </button>
               </div>
             )}

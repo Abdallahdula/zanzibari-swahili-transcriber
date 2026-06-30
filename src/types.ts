@@ -1,3 +1,13 @@
+export type AppLanguage = "sw" | "en";
+export type AppTheme = "dark" | "light";
+
+export interface AudioPreview {
+  url: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface ActionItem {
   id?: string;
   task: string;
