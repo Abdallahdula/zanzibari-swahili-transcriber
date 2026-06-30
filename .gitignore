@@ -4,5 +4,25 @@ dist/
 coverage/
 .DS_Store
 *.log
+
+# Local secrets and machine-specific config
 .env*
 !.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local assistant/tool state
+.agents/
+.codex/
+
+# Generated or local test media
+assets/.aistudio/
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.webm
+*.mp4
