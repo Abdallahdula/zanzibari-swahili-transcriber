@@ -136,7 +136,7 @@ export default function App() {
       } else {
         const textError = await response.text();
         if (response.status === 413 || textError.toLowerCase().includes("too large")) {
-          throw new Error("Faili la sauti ni kubwa sana kupokelewa na seva. Tafadhali pakia faili lililofupishwa lenye ukubwa chini ya 10MB au urekodi dondoo fupi hapa nchini.");
+          throw new Error("Faili la sauti ni kubwa sana kupokelewa na seva (max 100MB). Tafadhali libane/compress kwanza kisha upakie tena.");
         }
         throw new Error(`Mchakato wa kutafsiri umefeli (Status ${response.status}). Tafadhali hakikisha kuwa Secrets panel ina ufunguo thabiti wa GEMINI_API_KEY au jaribu kutumia faili fupi zaidi.`);
       }

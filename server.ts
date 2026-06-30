@@ -8,8 +8,12 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const MAX_AUDIO_FILE_MB = 100;
+const MAX_AUDIO_FILE_BYTES = MAX_AUDIO_FILE_MB * 1024 * 1024;
+const MAX_AUDIO_FILE_ERROR =
+  `Faili la sauti ni kubwa sana (max ${MAX_AUDIO_FILE_MB}MB). Tafadhali libane/compress kwanza kisha upakie tena.`;
 
-// Enable large payloads for meeting audio files (39 min recordings can be large)
+// Allow base64 overhead for audio files up to 100MB.
 app.use(express.json({ limit: "150mb" }));
 app.use(express.urlencoded({ limit: "150mb", extended: true }));
 
@@ -33,6 +37,12 @@ function getGeminiClient(): GoogleGenAI {
     });
   }
   return aiClient;
+}
+
+function getBase64DecodedByteLength(base64Data: string): number {
+  const normalizedData = base64Data.replace(/\s/g, "");
+  const paddingLength = normalizedData.endsWith("==") ? 2 : normalizedData.endsWith("=") ? 1 : 0;
+  return (normalizedData.length * 3) / 4 - paddingLength;
 }
 
 // Helper to execute generateContent with automatic retry, exponential backoff, and model fallback
@@ -93,6 +103,10 @@ app.post("/api/transcribe", async (req: express.Request, res: express.Response) 
 
     if (!audioData) {
       return res.status(400).json({ error: "No audio data provided." });
+    }
+
+    if (getBase64DecodedByteLength(audioData) > MAX_AUDIO_FILE_BYTES) {
+      return res.status(413).json({ error: MAX_AUDIO_FILE_ERROR });
     }
 
     const ai = getGeminiClient();
@@ -230,6 +244,10 @@ Context: ${meetingContext || "Zanzibari Swahili meeting with potential local sla
 // Robust error handler to format exceptions as JSON instead of HTML
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error("Express Uncaught Middleware/Router Error:", err);
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ error: MAX_AUDIO_FILE_ERROR });
+  }
+
   res.status(err.status || err.statusCode || 500).json({
     error: err.message || "Hitilafu imetokea kwenye seva. Tafadhali jaribu tena.",
   });

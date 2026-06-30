@@ -24,6 +24,11 @@ interface AudioToolsProps {
   isProcessing: boolean;
 }
 
+const MAX_AUDIO_FILE_MB = 100;
+const MAX_AUDIO_FILE_BYTES = MAX_AUDIO_FILE_MB * 1024 * 1024;
+const OVERSIZED_AUDIO_MESSAGE =
+  `Faili la sauti ni kubwa sana (max ${MAX_AUDIO_FILE_MB}MB). Tafadhali libane/compress kwanza kisha upakie tena.`;
+
 export default function AudioTools({ onTranscribe, isProcessing }: AudioToolsProps) {
   // Input form state
   const [meetingTitle, setMeetingTitle] = useState("");
@@ -78,6 +83,12 @@ export default function AudioTools({ onTranscribe, isProcessing }: AudioToolsPro
     return `${String(mins).padStart(2, "0")}:${String(remainingSecs).padStart(2, "0")}`;
   };
 
+  const isAudioFileTooLarge = (file: Blob) => file.size > MAX_AUDIO_FILE_BYTES;
+
+  const warnOversizedAudio = () => {
+    alert(OVERSIZED_AUDIO_MESSAGE);
+  };
+
   // Drag handles
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -96,8 +107,8 @@ export default function AudioTools({ onTranscribe, isProcessing }: AudioToolsPro
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith("audio/")) {
-        if (file.size > 10 * 1024 * 1024) {
-          alert("Faili la sauti ni kubwa sana (max 10MB). Tafadhali tumia faili lililobanwa zaidi au rekodi dondoo fupi hapa nchini.");
+        if (isAudioFileTooLarge(file)) {
+          warnOversizedAudio();
           return;
         }
         setSelectedFile(file);
@@ -108,8 +119,9 @@ export default function AudioTools({ onTranscribe, isProcessing }: AudioToolsPro
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 10 * 1024 * 1024) {
-        alert("Faili la sauti ni kubwa sana (max 10MB). Tafadhali tumia faili lililobanwa zaidi au rekodi dondoo fupi hapa nchini.");
+      if (isAudioFileTooLarge(file)) {
+        warnOversizedAudio();
+        e.target.value = "";
         return;
       }
       setSelectedFile(file);
@@ -136,6 +148,12 @@ export default function AudioTools({ onTranscribe, isProcessing }: AudioToolsPro
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        if (isAudioFileTooLarge(audioBlob)) {
+          warnOversizedAudio();
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = () => {
@@ -182,6 +200,10 @@ export default function AudioTools({ onTranscribe, isProcessing }: AudioToolsPro
   // Trigger submission to server API
   const handleSubmit = async () => {
     if (!selectedFile) return;
+    if (isAudioFileTooLarge(selectedFile)) {
+      warnOversizedAudio();
+      return;
+    }
 
     // Convert file to base64
     const reader = new FileReader();
@@ -341,7 +363,7 @@ export default function AudioTools({ onTranscribe, isProcessing }: AudioToolsPro
                             Kokota na upakie faili ya sauti hapa
                           </p>
                           <p className="text-xs text-slate-500 mt-1">
-                            Format zote za standard audio: MP3, WAV, M4A, OGG
+                            Format zote za standard audio: MP3, WAV, M4A, OGG. Max {MAX_AUDIO_FILE_MB}MB.
                           </p>
                         </div>
                         <div className="inline-block px-3 py-1 rounded bg-slate-900 border border-slate-800 text-[10px] uppercase font-bold tracking-wider text-amber-500">
@@ -378,6 +400,7 @@ export default function AudioTools({ onTranscribe, isProcessing }: AudioToolsPro
               <Clock className="w-4.5 h-4.5 text-indigo-400 shrink-0 mt-0.5" />
               <p className="leading-relaxed leading-slate-400">
                 <strong>Ushauri wa urefu wa faili</strong>: Kwa mafaili makubwa, tunakushauri utumie audio format kama <strong>MP3</strong> au <strong>M4A</strong> yenye saizi ndogo ya MB badala ya uncompressed WAV ili usafirishaji kwenda kwa mfumo upite haraka na usigome.
+                Faili likizidi <strong>{MAX_AUDIO_FILE_MB}MB</strong>, libane/compress kwanza kisha upakie tena.
               </p>
             </div>
 
