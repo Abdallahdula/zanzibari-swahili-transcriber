@@ -16,6 +16,7 @@ import {
   HelpCircle
 } from "lucide-react";
 import { AudioPreview, DialogueTurn, DialectGlossItem } from "../types";
+import { normalizeTranscriptText } from "../utils/transcript";
 
 type ExportFormat = "docx" | "txt" | "pdf" | "md";
 
@@ -46,7 +47,7 @@ export default function InteractiveTranscript({
   const filteredTranscript = transcript.filter((turn) => {
     return (
       turn.speaker.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      turn.text.toLowerCase().includes(searchTerm.toLowerCase())
+      normalizeTranscriptText(turn.text).toLowerCase().includes(searchTerm.toLowerCase())
     );
   });
 
@@ -86,7 +87,7 @@ export default function InteractiveTranscript({
   // Export functions
   const handleCopyTranscript = () => {
     const textToCopy = transcript
-      .map((turn) => `[${turn.timestamp}] ${turn.speaker}: ${turn.text}`)
+      .map((turn) => `[${turn.timestamp}] ${turn.speaker}: ${normalizeTranscriptText(turn.text)}`)
       .join("\n");
     navigator.clipboard.writeText(textToCopy);
     setShowCopyNotification(true);
@@ -100,11 +101,11 @@ export default function InteractiveTranscript({
 
   const transcriptAsPlainText = () =>
     transcript
-      .map((turn) => `[${turn.timestamp}] ${turn.speaker}: ${turn.text}`)
+      .map((turn) => `[${turn.timestamp}] ${turn.speaker}: ${normalizeTranscriptText(turn.text)}`)
       .join("\n");
 
   const transcriptAsMarkdown = () =>
-    [`# ${sessionTitle}`, "", ...transcript.map((turn) => `- **[${turn.timestamp}] ${turn.speaker}:** ${turn.text}`)].join("\n");
+    [`# ${sessionTitle}`, "", ...transcript.map((turn) => `- **[${turn.timestamp}] ${turn.speaker}:** ${normalizeTranscriptText(turn.text)}`)].join("\n");
 
   const sanitizeFileName = (name: string) => {
     const cleaned = name
@@ -194,7 +195,7 @@ export default function InteractiveTranscript({
     const paragraphs = [
       `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>${escapeXml(sessionTitle)}</w:t></w:r></w:p>`,
       ...transcript.map((turn) =>
-        `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>${escapeXml(`[${turn.timestamp}] ${turn.speaker}: `)}</w:t></w:r><w:r><w:t>${escapeXml(turn.text)}</w:t></w:r></w:p>`
+        `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>${escapeXml(`[${turn.timestamp}] ${turn.speaker}: `)}</w:t></w:r><w:r><w:t>${escapeXml(normalizeTranscriptText(turn.text))}</w:t></w:r></w:p>`
       )
     ].join("");
     const files = [
@@ -535,7 +536,7 @@ export default function InteractiveTranscript({
                     />
                   ) : (
                     <div className="text-sm sm:text-sm text-slate-300 leading-relaxed font-sans">
-                      {renderTextWithSlangHighlights(turn.text)}
+                      {renderTextWithSlangHighlights(normalizeTranscriptText(turn.text))}
                     </div>
                   )}
                 </div>

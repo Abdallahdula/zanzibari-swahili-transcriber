@@ -162,7 +162,7 @@ app.post("/api/transcribe", async (req: express.Request, res: express.Response) 
             type: Type.OBJECT,
             properties: {
               speaker: { type: Type.STRING, description: "Speaker identifier (e.g., Salim, Khamis, Speaker A)." },
-              text: { type: Type.STRING, description: "Exact verbatim coastal Zanzibari Swahili transcription. Capture original words, dialect, and slang." },
+              text: { type: Type.STRING, description: "Exact verbatim coastal Zanzibari Swahili transcription. Capture original words, dialect, slang, and important audible non-speech events. If a patient coughs, write exactly: A patient coughs." },
               timestamp: { type: Type.STRING, description: "Inferred timeline of speakers' turn in format MM:SS." },
             },
             required: ["speaker", "text", "timestamp"],
@@ -196,7 +196,8 @@ Follow these strict rules:
 2. SPEAKER DIARIZATION: Segment who is speaking. If names are mentioned (Salim, Halima, Sumayya, Fatma, etc.), use their names as speaker labels instead of generic labels.
 3. CONCISE DENSITY FOR LONG RECORDINGS: If files are excessively long (such as a full 39 min meeting), synthesize repetitive circular loops, but preserve all relevant dialogue, core decisions, arguments, and Zanzibari slang terms with precise turn-by-turn timestamps in format MM:SS.
 4. TRANSCRIPT LANGUAGE: Keep the transcript itself in Swahili/Kiunguja exactly as spoken. Do not translate the spoken transcript into English, even if the application interface is English.
-5. SUMMARY: Provide high-quality meeting summaries, lists of decisions, and actionable items.`;
+5. PATIENT COUGH EVENTS: If a patient coughs, add it as its own transcript turn at the correct timestamp. Set the text to exactly "A patient coughs." Do not write only "[cough]" or "(cough)".
+6. SUMMARY: Provide high-quality meeting summaries, lists of decisions, and actionable items.`;
 
     const promptText = `Please transcribe the provided Swahili meeting audio file.
 File Name: ${fileName || "recording.mp3"}

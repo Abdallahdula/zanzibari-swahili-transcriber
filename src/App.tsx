@@ -25,6 +25,7 @@ import MeetingMinutes from "./components/MeetingMinutes";
 import DialectGlossary from "./components/DialectGlossary";
 import { SAMPLE_MEETINGS } from "./data/samples";
 import { MeetingSession, DialogueTurn, ActionItem, AppLanguage, AppTheme, AudioPreview } from "./types";
+import { normalizeTranscriptText } from "./utils/transcript";
 
 const UI_TEXT = {
   sw: {
@@ -275,7 +276,7 @@ export default function App() {
         transcript: data.transcript.map((turn: any, index: number) => ({
           id: `turn-${Date.now()}-${index}`,
           speaker: turn.speaker,
-          text: turn.text,
+          text: normalizeTranscriptText(turn.text),
           timestamp: turn.timestamp
         })),
         dialectGloss: data.dialectGloss
@@ -331,7 +332,7 @@ export default function App() {
             return {
               ...turn,
               speaker: updatedSpeaker,
-              text: updatedText
+              text: normalizeTranscriptText(updatedText)
             };
           }
           return turn;
